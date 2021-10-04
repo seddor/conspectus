@@ -1,0 +1,254 @@
+openapi: 3.0.0
+info:
+  title: Homework service API
+  version: 0.0.1
+servers:
+  - url: https://example.com
+    description: Production
+
+paths:
+  "/order/orders/{id}":
+    put:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: 'new'
+      responses:
+        '200':
+          description: OK message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseMessage'
+        '400':
+          description: bad request or validation errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseMessage'
+        '502':
+          description: server errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseMessage'
+  "/catalog/products/":
+    get:
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 113,123
+      responses:
+        '200':
+          description: Product collection
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+  "/prices/":
+    get:
+      parameters:
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 113,123
+      responses:
+        '200':
+          description: Product's prices collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPrices'
+  "/order/warehouses/":
+    get:
+      parameters:
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 113,123
+      responses:
+        '200':
+          description: Product's warehouses collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Warehouses'
+  "/customers/{customer_id}/addresses/":
+    parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressCreate'
+      responses:
+        '200':
+          description: OK message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Address successful saved'           
+components:
+  schemas:
+    Product:
+      properties:
+        id:
+          type: integer
+          example: '123'
+        name:
+          type: string
+          example: 'Foo'
+        sku:
+          type: string
+          example: 'foo'
+        description:
+          type: string
+          example: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam bibendum, diam sit amet faucibus finibus, felis urna ullamcorper dolor, et maximus velit dolor non lectus. Suspendisse potenti.'
+        width:
+          type: integer
+          example: '10'
+        height:
+          type: integer
+          example: '10'
+        depth:
+          type: integer
+          example: '10'
+        status:
+          type: integer
+          example: '1'
+        weight:
+          type: integer
+          example: '1' 
+        small_iamge:
+          type: string
+          example: 'http://example.com/media/catalog/product/123/1.png' 
+        base_image:
+          type: string
+          example: 'http://example.com/media/catalog/product/123/1.png' 
+        created_at:
+          type: string
+          format: date-time
+          example: '2017-07-21T17:32:28Z' 
+        updated_at:
+          type: string
+          format: date-time
+          example: '2017-07-21T17:32:28Z' 
+        is_in_stock:
+          type: boolean
+          example: true
+    ProductPrice:
+      properties:
+        product_id:
+          type: integer
+        prices:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              value:
+                type: number
+                format: double
+    ProductPrices:
+      type: array
+      items:
+        $ref: '#/components/schemas/ProductPrice'
+      example:
+        - product_id: 123
+          prices:
+            - type: base
+              value: 200
+            - type: special
+              value: 150
+    Warehouse:
+      properties:
+        id:
+          type: integer
+        product_id:
+          type: integer
+        qty:
+          type: integer
+        min_qty:
+          type: integer
+        region:
+          type: string
+        city:
+          type: string
+    Warehouses:
+      type: array
+      items:
+        $ref: '#/components/schemas/Warehouse'
+      example:
+        - id: 1
+          product_id: 1
+          qty: 345
+          min_qty: 5
+          region: Москва
+          city: Москва 
+        - id: 2
+          product_id: 1
+          qty: 234
+          min_qty: 5
+          region: Ростовская область
+          city: Ростов-На-Дону
+        - id: 1
+          product_id: 2
+          qty: 244
+          min_qty: 5
+          region: Москва
+          city: Москва
+    CustomerAddressCreate:
+      properties:
+        customer_id:
+          type: integer
+          example: 123
+        name:
+          type: string
+          example: Дом
+        country:
+          type: string
+          example: RU
+        region:
+          type: string
+          example: Москва
+        city:
+          type: string
+          example: Москва
+        address:
+          type: string
+          example: 'ул. Тверская, дом 12'
+    ResponseMessage:
+      properties:
+        message:
+          type: string
+          example: 'successful'
