@@ -273,3 +273,27 @@
 * Возьмите шефстро над джунами/мидлами, их вопросы помогать по-другому взглянуть на "обычные" проблемы
 * Читайте как можно больше
 * "Почему" важнее чем "Как?"
+
+## Ресурсы для развития
+
+### Книги
+
+#### Архитектура
+
+Len Bass, Paul Clements, Rick Kazman — Software Architecture in Practice
+
+Michael Keeling — Design it!
+
+Neal Ford, Rebecca Rarsons, Patrick Kua — Building Evolutionary Architectures
+
+Simon Brown — Software Architecture for Developers
+
+Martin Kleppmann — Design Data-Intensive Applications
+
+#### Коммуникация
+
+Калистрат Жаков, Сергей Пивоварин — Логика, Искусство спора
+
+#### Презентации
+
+Neal Ford, Matthew Mccullough, Nathaniel Schutta — Presentation patterns
