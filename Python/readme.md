@@ -294,3 +294,119 @@ for symbol in text:
     print(symbol)
 ```
 
+# Модули
+
+В Python любой **файл с кодом** называется **модулем**.
+
+## Импорт
+
+```python
+# Импорт gretting.py
+import greeting
+
+# вызываем функцию модуля
+greeting.say_hi()  # => Hi!
+
+# выводим на экран отдельную переменную
+print(greeting.name)  # => Bob
+
+# Частичный импрот
+from greeting import say_hi, name # импортируем отдельные компоненты модуля
+
+print(name)  # используем импортированную переменную
+say_hi()     # вызываем импортированную функцию
+
+# Импорт всего модуля (не рекомендуется использовать)
+from some_module import *
+```
+
+# Пакеты
+
+Пакеты — объединение модулей. С точки зрения структуры пакет — это директория с файлами модулей, имеющая имя в snake_case и содержащая, помимо прочего, специальный модуль с имением `__init__.py`.
+
+В `__init__.py` содержится следующий код:
+
+```python
+NAME = 'super_package'
+```
+
+Импорт происходит также, как модуль:
+
+```python
+import package
+
+print(package.NAME)
+
+# Квалификационный импорт модулей из пакета
+import package.functions
+import package.constants
+
+package.functions.greet(package.constants.PERSON)  # => Hello, Alice!
+
+# Частичный импорт из пакета
+from package.functions import greet
+from package.constants import PERSON
+
+greet(PERSON)  # => Hello, Alice!
+```
+
+Помимо этого также есть:
+
+* Абсолютный импорт — когда прописывается **полный путь до модуля**;
+* Относительный импорт — в относительном импорте используется `.`, которая означает **импорт модуля из текущей директории**:
+
+```python
+from . import module
+from .module import function
+from .subpackage.module import CONSTANT
+```
+
+# Кортежи
+
+В python есть составные типы данных, один из них это — кортеж. Кортеж представляет из себя несколько значений, записанных через запятую.
+
+```python
+rgb_colour = (255, 127, 64)
+name_and_age = ('Bob', 42)
+three_booleans = (True, False, True)
+two_pairs_of_numbers = ((1, 2), (3, 4))
+
+# Кортеж из одного элемента
+tuple = (42,)  # Ставим запятую, чтобы указать на кортеж
+```
+
+Кортежи полезны когда нужно вернуть несколько значений, например функция `div_mod` возвращает сразу результат деления нацело и остаток от деления:
+
+```python
+def div_mod(a, b):
+    quotient = a // b
+    modulo = a % b
+    return (quotient, modulo)
+
+div_mod(13, 4)  # (3, 1)
+```
+
+Для извлечения данных из кортежа нужно обратиться к ним по индексу:
+
+```python
+name_and_age = ('Bob', 42)
+
+name_and_age[0]  # 'Bob'
+name_and_age[1]  # 42
+
+# Получения длины кортежа
+len(name_and_age) # 2
+```
+
+Кортежи можно разбирать:
+
+```python
+name_and_age = ('Bob', 42)
+
+(name, age) = name_and_age
+name  # 'Bob'
+age   # 42
+# Разбиение кортежа полученного из функции
+(quotient, modulo) = div_mod(13, 4)
+```
+
