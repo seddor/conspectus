@@ -418,3 +418,43 @@ Ansible позволяет выполнять таски при определё
 ```
 
 Здесь проихсодит проверка, что значение больше 5.
+
+## Фильтры
+
+Шаблонизатор Jinja2 поддерживает фильтры - специальные функции,  которые применяются к переменным и производят с ними какие-то изменения. Соответственно, и в Ansible этот механизм тоже используется: 
+
+```yaml
+- hosts: all
+  gather_facts: no
+  vars:
+    numbers: [3, 2, 1, 3, 2]
+  tasks:
+    - name: get min number
+      ansible.builtin.debug: msg={{ numbers | min }}
+    - name: get max number
+      ansible.builtin.debug: msg={{ numbers | max }}
+    - name: get unique values
+      ansible.builtin.debug: var={{ item }}
+      loop: "{{ numbers | unique }}"
+    - name: get random value
+      ansible.builtin.debug: msg={{ ['a', 'b', 'c'] | random }}
+    - ansible.builtin.debug: msg={{ '192.0.2.1/24' | ipaddr('address') }}
+    - ansible.builtin.debug: msg={{ 'test1' | hash('sha1') }}
+    - ansible.builtin.debug: msg={{ path | basename }}
+    - ansible.builtin.debug: msg={{ path | dirname }}
+    - ansible.builtin.debug: msg={{ "~/Movies" | expanduser }}
+```
+
+Здесь применяются фльтры к списку чисел:
+
+- `min` находит минимальное значение;
+- `max` находит максимальное значение;
+- `unique` находит уникальные значения (результатом является список, поэтому для вывода на печать используем цикл);
+- `random` позволяет выбрать случайное значение из списка;
+- `ipaddr` позволяет извлекать из ip-адреса  различные части. Для его работы возможно придется установить  дополнительный Python-пакет. В документации об этом написано;
+- `hash` создает хэш;
+-  `basename` и `dirname` работают с путями. С помощью них можно выделить имя файла и путь к директории;
+- `expanduser` раскрывает тильды и делает подстановку.
+
+[Документация по фильтрам](https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#using-filters-to-manipulate-data)
+
