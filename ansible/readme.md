@@ -458,3 +458,314 @@ Ansible позволяет выполнять таски при определё
 
 [Документация по фильтрам](https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#using-filters-to-manipulate-data)
 
+## Регистрация результата
+
+В ansible существует механизм _регстрация результата_, который позволяет использовать результат выполнения одной такси в другой.
+
+```yaml
+- hosts: all
+  gather_facts: no
+  tasks:
+    - ansible.builtin.shell: ls /Users
+      register: home_dirs
+    - name: add home dirs to cron
+      ansible.builtin.cron:
+        name: "backup_dirs"
+        minute: "0"
+        hour: "5,2"
+        job: "backup /home/{{ item }}"
+      with_items: home_dirs.stdout_lines
+    - ansible.builtin.debug:
+        var: home_dirs.stdout_lines
+```
+
+С помощью ключа `register`, можно записать результат работы модуля `shell` в переменную, в данном случае в `home_dirs`. Затем эту переменную можно использовать в последующих тасках.
+
+В нашем случае `home_dirs` будет содержать примерно такие данные:
+
+```bash
+ansible-playbook playbook.yml -i inventory.ini
+TASK: [print home_dirs variable] ****************
+ok: [localhost] => {
+    "var": {
+        "home_dirs": {
+            "changed": true,
+            "cmd": "ls /Users",
+            "delta": "0:00:00.011196",
+            "end": "2020-08-11 15:20:12.739441",
+            "failed": false,
+            "rc": 0,
+            "start": "2020-08-11 15:20:12.728245",
+            "stderr": "",
+            "stderr_lines": [],
+            "stdout": "Guest\nShared\nkirill"
+            "stdout_lines": [
+                "Guest",
+                "Shared",
+                "kirill"
+            ]
+        }
+    }
+}
+```
+
+`home_dirs` — хэш, внутри него содержится информация о таске, самое главное здесь это `stderr` и `stdout`.  Причём `stdout` представлен в двух форматах: в виде строки и списка.
+
+Ещё пример:
+
+```yaml
+- hosts: all
+  gather_facts: no
+  tasks:
+    - ansible.builtin.command: 'false'
+      register: result
+      ignore_errors: yes
+    - ansible.builtin.command: echo 'ehu'
+      when: not result.failed
+    - ansible.builtin.command: uptime
+      when: result.failed
+```
+
+Здесь включено игнорирования ошибок для команды `ansible.builtin.command: 'false'` , чтобы ошибка в ней не приводила к остановке выполнения плейбука, далее проверяется результат этой команды и в зависимости от успешности выполения этой команды выполянются остальные команды.
+
+## Включения
+
+В плейбук можно включать другие файлы, для этого существуют модули:
+
+- [include_tasks](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html)
+- [import_playbook](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/import_playbook_module.html)
+- [import_tasks](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/import_tasks_module.html)
+
+Модули `include_tasks` и `import_tasks` очень схожи, но ansible обрабатывает их по-разному. Для статических задач используется `import*`, а для динамических `include*`. Подробней про эти две модели можно узнать из официальной документации:
+
+- [Including and Import](https://docs.ansible.com/ansible/latest/user_guide/playbooks_reuse_includes.html)
+- [Creating Reusable Playbooks](https://docs.ansible.com/ansible/latest/playbooks_reuse.html)
+
+`include` накладывает ряд ограничений в связи с его динамической природой, поэтому на практике обычно используется `import_tasks` или `import_playbook`.
+
+## Роли
+
+Ansible выделяет повторяющиеся вещи в роли. Роли выкладываются в общий [каталог](https://galaxy.ansible.com/home), где можно найти готовое решение по установке и настройке.
+
+Роль прдеставляет из себя набор задач или обработчик переменных, файлав и других аретфакторв, которые располагаются и подключаются как единое целое к плейбуку.
+
+Пример: устновка nginx, есть [официальная роль для его установки](https://galaxy.ansible.com/nginxinc/nginx).
+
+Установка роли выполняется так:
+
+```bash
+ansible-galaxy install nginxinc.nginx
+```
+
+Имя роли состоит из неймспейса (nginxinc) и именем самой роли (ngnix).
+
+Подключение роли:
+
+```yaml
+- hosts: all
+  roles:
+    - role: nginxinc.nginx
+  tasks: ...
+```
+
+Ansible выполняет роли до `tasks`, независимо от порядка ключей в плейбуке. Если требуется выполнить какие-то действие до роли то есть два варианта:
+
+* Добавить задачи в `pre_tasks`:
+
+```yaml
+- hosts: all
+  pre_tasks: # Выполняются до ролей
+    # Тут список задач
+    - name: Какая-то задача
+      ansible.builtin.shell: # Делаем что-нибудь
+  roles:
+    - role: nginxinc.nginx
+    - role: # какая-нибудь другая роль
+  tasks: # Выполняются после ролей
+    # Тут список задач
+```
+
+* Добавить роли через `import_role`:
+
+```yaml
+- hosts: all
+  tasks:
+    - name: Какая-то задача
+      ansible.builtin.shell: # Делаем что-нибудь
+
+    - name: Ставим nginx через роль
+      import_role:
+        name: nginxinc.nginx
+
+    - name: Какая-то задача
+      ansible.builtin.shell: # Делаем что-нибудь
+```
+
+### Конфигурация ролей
+
+Управлять поведением роли можно с помощью перепеменных.
+
+Переменные можно найти в директории _defaults_ в репозитории роли, например в nginx:
+
+```yaml
+# Enable NGINX and NGINX modules.
+# Variables for these options can be found below.
+# Default is true.
+nginx_enable: true
+
+# Print NGINX configuration file to terminal after executing playbook.
+nginx_debug_output: false
+
+# Install NGINX Dynamic Modules.
+# You can select any of the dynamic modules listed below. Beware of NGINX Plus only dynamic modules (these are marked).
+# Format is list with either the dynamic module name or a dictionary (see njs for an example).
+# When using a dictionary, the default value for state is present, and for version it's nginx_version if specified.
+# Default is an empty list (no dynamic modules are installed).
+nginx_modules: []
+  # - auth-spnego  # NGINX Plus
+  # - brotli  # NGINX Plus
+  # - cookie-flag  # NGINX Plus
+  # - encrypted-session  # NGINX Plus
+  # - geoip
+```
+
+Переопределяются переменные так:
+
+```yaml
+
+# roles
+- hosts: all
+  roles:
+    - role: nginxinc.nginx
+      vars:
+        nginx_debug_output: true
+        nginx_modules:
+          - geoip
+
+# import_role
+- hosts: all
+  tasks:
+    - import_role:
+        name: nginxinc.nginx
+      vars:
+        nginx_debug_output: true
+        nginx_modules:
+          - geoip
+```
+
+### Автоматическая установка
+
+Роли можно устанавливать автоматически, для этого создаётся файл _requirements.yml_, в который добавляется список нужных ролей:
+
+```yaml
+roles:
+  # Install a role from Ansible Galaxy.
+  - name: geerlingguy.java
+    version: 1.9.6
+```
+
+Установка выполняется командой:
+
+```bash
+ansible-galaxy install -r requirements.yml
+```
+
+## Коллекции
+
+Коллекции — формат распостранения связанного набора плейбуков, ролей, модулей и плавунов. Все встроенные модули лежат [здесь](https://github.com/ansible-collections).
+
+Список установеленных коллекций можно посмотреть так:
+
+```bash
+ansible-galaxy collection list
+```
+
+Коллекция *ansible.builtin* здесь не указывается, т.к. она встроена в ядро Ansible.
+
+Коллекции именуются так же как роли: _неймспейс.название_.
+
+В самой коллекции содержатся модули:
+
+```yaml
+- hosts: all
+  tasks:
+    - name: Создание новой базы данных
+      community.postgresql.postgresql_db:
+        name: hexlet-development
+
+    - name: Создание дампа существующей базы данных
+      community.postgresql.postgresql_db:
+        name: hexlet-production
+        state: dump
+        target: /tmp/hexlet.production.sql
+```
+
+Если коллекция не входит в поставку её можно установить командой:
+
+```bash
+ansible-galaxy collection install nginxinc.nginx_core
+```
+
+[Пример с конфигурацией](https://github.com/nginxinc/ansible-collection-nginx/blob/main/playbooks/deploy-nginx-web-server.yml).
+
+### Автоматическая установка
+
+Как и роли, коллекции можно устанавливать автоматически, в файле *requirements.yml*:
+
+```yaml
+collections:
+  # Install a collection from Ansible Galaxy
+  - name: geerlingguy.php_roles
+    version: 0.9.3
+```
+
+Затем запускается установка:
+
+```bash
+ansible-galaxy install -r requirements.yml
+```
+
+## Ansible Vault
+
+Ansible Vault — механизм шифрования переменных и файлов, который помогает спрятать секретные данные (пароли, ключи и т.п.).
+
+У Ansible Vault есть множество вариантов, использования, о них можно почитать в [документации](https://docs.ansible.com/ansible/latest/vault_guide/index.html). Ниже один из способов использования.
+
+1. Создать директорию _group_vars/all_ в директории, откуда запускается ansible. Yaml-файлы, внутри этой директории автоматически подгружаются во время выполнения плейбуков.
+2. Создать файл _group_vars/all/vault.yml_, в нём будут храниться зашифрованные переменные.
+3. Добавить туда переменную с любым именем и нужным значением.
+
+Для шифрования нужно выполнить команду:
+
+```bash
+ansible-vault encrypt group_vars/all/vault.yml
+```
+
+Перед шифрованием ansible запроси пароль, который нужно запомнить. После установки пароля файл будет зашифрован. Его содержимое будет вылядеть примерно так:
+
+```
+$ANSIBLE_VAULT;1.1;AES256
+34613437623263653438316466656437306631343062656565373638393736653966313830393232
+6135363366393766333539653237353338316436663636610a623837646561616234393261613836
+65376434396536383563626634346365663364313661313766363065616638383035636130313162
+3261663433663839660a636239386136373864626665656434643530656439323836653063666336
+6664
+```
+
+Для того, чтобы использовать зашифрованные данные во время запуска ansible нужно указать опцию ` --ask-vault-pass`:
+
+```bash
+ansible-playbook -i inventory --ask-vault-pass playbook.yml
+```
+
+Чтобы постоянно не вводить пароль его можно положить в какой-нибудь файл. И указать к нему путь в опции `--vault-password-file`:
+
+```bash
+ansible-playbook --vault-password-file /path/to/my/vault-password-file ...
+```
+
+Для редактирования файла-хранилища нужно использовать команду:
+
+```bash
+ansible-vault edit group_vars/all/vault.yml
+```
