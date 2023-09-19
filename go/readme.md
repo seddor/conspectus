@@ -872,3 +872,19 @@ fmt.Println(engToRus) // map[hello:привет]
 ```
 
 Мапы всегда передаются по ссылке
+
+## Обход мап
+
+Как и слайс, мапу можно обойти с помощью `for range`:
+
+```go
+idToName := map[int64]string{1: "Alex", 2: "Dan", 3: "George"}
+
+// первый аргумент — ключ, второй — значение
+for id, name := range idToName {
+    fmt.Println("id: ", id, "name: ", name)
+}
+```
+
+Стоит учитывать, что порядок ключей в мапе рандомизирован.
+
