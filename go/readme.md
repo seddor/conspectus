@@ -958,3 +958,25 @@ func main() {
     fmt.Println(reflect.TypeOf(asciiChStr), asciiChStr) // string Q
 }
 ```
+
+## Обход строки
+
+Строки можно обходить с помощью `for`:
+
+```go
+package main
+
+import (
+    "fmt"
+)
+
+func main() {
+    s := "hello"
+    for i := 0; i < len(s); i++ {
+        fmt.Println(string(s[i]))
+    }
+
+}
+```
+
+Однако, это корректно будет работать только со строками из ASCII символов, при работе с многобайтовыми строка вывод будет некорректным.
