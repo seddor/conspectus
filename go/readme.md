@@ -1021,3 +1021,85 @@ func main() {
 }
 ```
 
+## Стандартный пакет strings
+
+Для работы со строками существует пакет `strings`, который содержит основные функции. Например часто используются функции:
+
+```go
+import "strings"
+
+// проверяет наличие подстроки в строке
+strings.Contains("hello", "h") // true
+
+// разбивает строку по Юникод символам или по переданному разделителю
+strings.Split("hello", "") // ["h", "e", "l", "l", "o"]
+
+// склеивает строки из слайса с разделителем
+strings.Join([]string{"hello","world!"}, " ") // "hello world!"
+```
+
+Важная часть этого пакета —это `Builder`. Когда необходимо собрать большую строку по каким-то правилам лучше не использовать конкатенацию, а использовать `Builder`:
+
+```go
+import "strings"
+
+sb := strings.Builder{}
+
+sb.st("hello")
+sb.WriteString(" ")
+sb.WriteString("world")
+
+sb.String() // "hello world"
+```
+
+[Пакет strings](https://pkg.go.dev/strings)
+
+## Форматирование строк
+
+Пакет `fmt` используется не только для вывода переменных или реультатов функций, но и для форматирования строк. Для подстановки значений используются плейсхолдеры:
+
+```go
+name := "Andy"
+
+// подставляем строку
+fmt.Sprintf("hello %s", name) // "hello Andy"
+
+// число
+fmt.Sprintf("there are %d kittens", 10) // "there are 10 kittens"
+
+// логический тип
+fmt.Sprintf("your story is %t", true) // "your story is true"
+```
+
+Также существуют специализированные плейсхолдеры, которые преобразуют сложные структуры:
+
+```go
+package main
+
+import (
+    "fmt"
+)
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    p := Person{Name: "Andy", Age: 18}
+
+    // вывод значений структуры
+  	// simple struct: {Andy 18}
+    fmt.Println("simple struct:", p)
+
+    // вывод названий полей и их значений
+  	// detailed struct: {Name:Andy Age:18}
+    fmt.Printf("detailed struct: %+v\n", p)
+
+    // вывод названий полей и их значений в виде инициализации
+  	// Golang struct: main.Person{Name:"Andy", Age:18}
+    fmt.Printf("Golang struct: %#v\n", p)
+}
+```
+
+[Пакет fmt](https://pkg.go.dev/fmt)
