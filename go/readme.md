@@ -1103,3 +1103,84 @@ func main() {
 ```
 
 [Пакет fmt](https://pkg.go.dev/fmt)
+
+## Вариативные функции
+
+Последний аргумент функции может быть вариативным. Функция может иметь маскимум один вариативный агрумент и этот агрумент всегда слайс. Чтобы обозначить аргумент вариативным нужно поставить `…` перед его типом:
+
+```go
+package main
+
+import (
+    "fmt"
+)
+
+func main() {
+    // кол-во аргументов может быть любым
+    PrintNums(1, 2, 3)
+}
+
+
+func PrintNums(nums ...int) {
+    for _, n := range nums {
+        fmt.Println(n)
+    }
+}
+```
+
+Также `…` можно разбить слайс на элементы при предаче в вариативную функцию. Например, метод `append(slice []Type, elems …Type) []Type` принимает вариативный аргумент `elems …Type`. Чтобы добавить один слайс в конец другого, нужно разить второй слайс на элементы путем добавления  `…` после переменной:
+
+```go
+nums1 := []int{1,2,3,4,5}
+nums2 := []int{6,7,8,9,10}
+
+res := append(nums1, nums2...) // [1 2 3 4 5 6 7 8 9 10]
+```
+
+## Передача указателей в качестве аргумета функции
+
+```go
+package main
+
+import (
+    "fmt"
+)
+
+type User struct {
+    email    string
+    password string
+}
+
+// при объявлении указываем,
+// что переменная должна быть указателем.
+// Для этого ставим звездочку * перед типом данных
+func fillUserData(u *User, email string, pass string) {
+    u.email = email
+    u.password = pass
+}
+
+func main() {
+    u := User{}
+
+    // передаем указатель с помощью амперсанда
+    // & перед переменной
+    fillUserData(&u, "test@test.com", "qwerty")
+
+    fmt.Printf("points on func call %+v\n", u)
+    // points on func call {email:test@test.com password:qwerty}
+
+    // сразу инициализируем переменную с указателем
+    up := &User{}
+
+    fillUserData(up, "test@test.com", "qwerty")
+
+    fmt.Printf("points on init %+v\n", up)
+    // points on init {email:test@test.com password:qwerty}
+}
+```
+
+Мапы по умолчанию передаются с указателем.
+
+[Указатели в Go](https://gobyexample.com/pointers)
+
+[Указатели](http://golang-book.ru/chapter-08-pointers.html)
