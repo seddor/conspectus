@@ -1184,3 +1184,55 @@ func main() {
 [Указатели в Go](https://gobyexample.com/pointers)
 
 [Указатели](http://golang-book.ru/chapter-08-pointers.html)
+
+## Методы структур
+
+В Go нет классов, но существуют структуры с методами. Метод — это функция с дополнительным аргументом, который указывается в скобках между `func` и названием функции:
+
+```go
+package main
+
+import (
+    "fmt"
+)
+
+type Dog struct{}
+
+// сначала объявляется дополнительный аргумент "(d Dog)", а следом идет обычное описание функции
+func (d Dog) Bark() {
+    fmt.Println("woof!")
+}
+
+func main() {
+    d := Dog{}
+    d.Bark() // woof!
+}
+```
+
+В примере структура `Dog` передаётся по значенню. Поэтому, при изменении свойст внутри метода `Bark`, исходная структура не имзеняется.
+
+Если изменения необходимы, то нужно передавать указатель:
+
+```go
+package main
+
+import (
+    "fmt"
+)
+
+type Dog struct {
+    IsBarked bool
+}
+
+func (d *Dog) Bark() {
+    fmt.Println("woof!")
+    d.IsBarked = true
+}
+
+func main() {
+    d := &Dog{}
+    d.Bark() // woof!
+
+    fmt.Println(d.IsBarked) // true
+}
+```
