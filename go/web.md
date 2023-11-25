@@ -224,3 +224,196 @@ FATA[0000] listen tcp :80: bind: address already in use
 exit status 1
 ```
 
+## Микрофреймворк Fiber
+
+[Fiber](https://gofiber.io/) —мирофреймворк на Go для насписания веб-приложений.
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+)
+
+func main() {
+    webApp := fiber.New()
+    // Обозначаем, что на GET запрос по пути /address нужно вернуть строку с адресом
+    webApp.Get("/address", func(c *fiber.Ctx) error {
+        return c.SendString("145 DUNDEE SOUTH SAN FRANCISCO CA 94080-1023. USA")
+    })
+
+    // Запускаем веб-приложение на порту 80
+    // Оборачиваем в функцию логирования, чтобы видеть ошибки, если они возникнут
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+Теперь при запуске веб-приложения и открытии `/address` в брузере выведится:
+
+```
+145 DUNDEE SOUTH SAN FRANCISCO CA 94080-1023. USA
+```
+
+### Запросы и ответы в Fiber
+
+В fiber запрос и ответ содержатся в одной структуре `*fiber.Ctx`.
+
+Представим, что нам нужно реализовать веб-приложение, у которого есть страница с профилями пользователей. Когда программа получает профиль,  передается его идентификатор с помощью GET параметра `profile_id`.
+
+Если `profile_id` не указан, то приложение должно возвращать ответ со статусом `422` (Unprocessable Entity) и текстом ошибки в теле. Если передается корректный `profile_id`, то возвращается строка с идентификатором профиля:
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+)
+
+const profileUnknown = "unknown"
+
+func main() {
+    webApp := fiber.New()
+    webApp.Get("/profiles", func(c *fiber.Ctx) error {
+        profileID := c.Query("profile_id", profileUnknown)
+        if profileID == "" {
+            profileID = profileUnknown
+        }
+
+        if profileID == profileUnknown {
+            return c.Status(http.StatusUnprocessableEntity).SendString("profile_id is required")
+        }
+
+        return c.SendString(fmt.Sprintf("User Profile ID: %s", profileID))
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+### Роутинг в fiber
+
+[Routing](https://docs.gofiber.io/guide/routing/)
+
+### По пути HTTP-запроса
+
+Правила сопоставления пути HTTP-запроса с обработчиком описываются в коде при инициализации веб-приложения:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+)
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Get("/path1", path1Handler)
+    webApp.Get("/path2", path2Handler)
+    ...
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+Когда приходит запрос от клиента веб-приложение ищет соответвующих обработчик по пути запроса.
+
+### По методам HTTP-запроса
+
+В Fiber роутинг по HTTP-методу запроса настраивается с помощью специальных функций:
+
+- `webApp.Get()` — для роутинга GET-запросов
+- `webApp.Post()` — для роутинга POST-запросов
+
+Пример: есть онлайс счетчик с обрабатывающий такие запросы:
+
+- *POST /counter*, который увеличивает счетчик на единицу
+- *GET /counter*, который возвращает текущее значение счетчика и не изменяет его состояние
+
+Реализация:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+    "net/http"
+    "strconv"
+)
+
+var counter int64 = 0
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Get("/counter", func(c *fiber.Ctx) error {
+        return c.SendString(strconv.FormatInt(counter, 10))
+    })
+
+    webApp.Post("/counter", func(c *fiber.Ctx) error {
+        counter++
+
+        return c.SendStatus(http.StatusOK)
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+### Динамичный роутинг
+
+Предположим нам нужно использовать счётчики для разных типов событий, чтобы это следать можно исползьовать динамичный рутин, для этого в путь добавляется часть, изменяемая в зависимости от требуемого счетчика: `/counter/:event`:
+
+```go 
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+    "net/http"
+    "strconv"
+)
+
+var counters = make(map[string]int64)
+
+const requestParamKeyEvent = "event"
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Get("/counter/:event", func(c *fiber.Ctx) error {
+        event := c.Params(requestParamKeyEvent, "")
+        if event == "" {
+            return c.SendStatus(http.StatusUnprocessableEntity)
+        }
+
+        eventCounter, ok := counters[event]
+        if !ok {
+            return c.SendStatus(http.StatusNotFound)
+        }
+
+        return c.SendString(strconv.FormatInt(eventCounter, 10))
+    })
+
+    webApp.Post("/counter/:event", func(c *fiber.Ctx) error {
+        event := c.Params(requestParamKeyEvent, "")
+        if event == "" {
+            return c.SendStatus(http.StatusUnprocessableEntity)
+        }
+
+        counters[event] += 1
+
+        return c.SendStatus(http.StatusOK)
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
