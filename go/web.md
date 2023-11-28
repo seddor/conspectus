@@ -417,3 +417,169 @@ func main() {
 }
 ```
 
+## Сериализация данных в JSON
+
+Для сериализации и десериализации данных в JSON используется стандартная библиотека. Для этого в ней есть две функции:
+
+* `json.Marshal()` — сериализует данные в JSON
+* `json.Unmarshal()` — десериализует данные из JSON
+
+Пример:
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+)
+
+type User struct {
+    ID       int64  `json:"id"`
+    Email    string `json:"email"`
+    Name     string `json:"name"`
+    Age      int    `json:"age,omitempty"`
+    password string
+}
+
+func main() {
+    user := User{
+        ID:       222,
+        Email:    "john@doe.com",
+        Name:     "John",
+        Age:      25,
+        password: "secret",
+    }
+
+    // Сериализация структуры в строку
+    jsonBytes, err := json.Marshal(&user)
+    if err != nil {
+        // Используем Fatal только для примера,
+        // нельзя использовать в реальных приложениях
+        log.Fatalln("marshal ", err.Error())
+    }
+
+    fmt.Printf("JSON string: %s\n", string(jsonBytes))
+
+    // Десериализация строки в структуру
+    deserializedUser := User{}
+    err = json.Unmarshal(jsonBytes, &deserializedUser)
+    if err != nil {
+        // Используем Fatal только для примера,
+        // нельзя использовать в реальных приложениях
+        log.Fatalln("unmarshal ", err.Error())
+    }
+
+    fmt.Printf("Deserialized user struct: %+v\n", deserializedUser)
+}
+```
+
+Вывод программы:
+
+```json
+JSON string: {"id":222,"email":"john@doe.com","name":"John","age":25}
+Deserialized user struct: {ID:222 Email:john@doe.com Name:John Age:25 password:}
+```
+
+В примере мы преобразуем объкт пользователя _User_ в JSON-структуру и обратно. В результате получается такая же структура _User_, но с пустым полем `password`, т.к. оно приватное.
+
+Важные моменты работы с JSON в Go:
+
+- В структуре сериализуются только публичные свойства, которые написаны с заглавной буквы. В нашем примере свойство `password` — приватное, поэтому оно не попало в JSON-строку. Такое же правило действует и на десериализацию. Если мы добавим значение `password` в JSON-строку, то это значение все равно не попадет в десериализованную структуру
+- В JSON-строке можно указывать название свойства, которое будет  отличаться от названия свойства в структуре. Для этого используется тег `json:""`. В нашем примере мы указали тег для свойства `ID` в виде `json:"id"`. Так можно указывать, в каком виде должно называться свойство в JSON-строке в зависимости от соглашений в проекте
+- При описании тега `json:""` можно указать опцию `omitempty`. Эта опция говорит о том, что если значение свойства является нулевым, то это поле не нужно включать в сериализованную строку
+
+### JSON в веб-приложении
+
+ В Fiber работа с JSON происходит через контекст запроса `c *fiber.Ctx`. Для этого есть два метода:
+
+- `c.BodyParser()` — преобразует JSON-тело запроса в объект
+- `c.JSON()` — отправляет JSON-строку в теле ответа
+
+Реализуем веб-приложение для сохранения логов, в котором отправим JSON в теле запроса и получим JSON в теле ответа.
+
+В приложении будет единственный метод `/logs`, который будет принимать POST-запросы на сохранение записи. В теле  запроса передается структура одной записи логов. В ответе веб-приложение возвращает структуру с идентификатором сохраненной записи:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/gofiber/fiber/v2"
+    "github.com/google/uuid"
+    "github.com/sirupsen/logrus"
+)
+
+type (
+    CreateLogEntryRequest struct {
+        Message   string `json:"message"`
+        Level     string `json:"level"`
+        Timestamp int64  `json:"timestamp"`
+    }
+
+    CreateLogEntryResponse struct {
+        ID string `json:"id"`
+    }
+
+    LogEntry struct {
+        ID        string
+        Message   string
+        Level     string
+        Timestamp int64
+    }
+)
+
+var logs []LogEntry
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Post("/logs", func(c *fiber.Ctx) error {
+        var request CreateLogEntryRequest
+        if err := c.BodyParser(&request); err != nil {
+            return fmt.Errorf("body parser: %w", err)
+        }
+
+        logEntry := LogEntry{
+            ID:        uuid.New().String(),
+            Message:   request.Message,
+            Level:     request.Level,
+            Timestamp: request.Timestamp,
+        }
+
+        // Упрощенное хранение в памяти приложения
+        logs = append(logs, logEntry)
+
+        return c.JSON(CreateLogEntryResponse{
+            ID: logEntry.ID,
+        })
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+Теперь отправим ттестовый запрос на сохранение:
+
+```bash
+curl --location --request POST 'http://localhost/logs' \
+--header 'Content-Type: application/json' \
+--data-raw '{"message": "test", "level": "info", "timestamp": 1663251297}'
+```
+
+В ответ придёт идентификатор:
+
+```bash
+HTTP/1.1 200 OK
+
+{"id":"8a53055f-6fcc-435a-b2be-35abc978a9ed"}
+```
+
+### Ссылки
+
+1. [JSON](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON)
+2. [JSON and Go](https://go.dev/blog/json)
+3. [Fiber JSON Response](https://docs.gofiber.io/api/ctx#json)
+4. [Fiber Body Parser](https://docs.gofiber.io/api/ctx#bodyparser)
+
