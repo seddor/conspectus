@@ -583,3 +583,204 @@ HTTP/1.1 200 OK
 3. [Fiber JSON Response](https://docs.gofiber.io/api/ctx#json)
 4. [Fiber Body Parser](https://docs.gofiber.io/api/ctx#bodyparser)
 
+## Хранение данных в памяти Go-приложений
+
+Пример приложение хранящего данные в пямити:
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+    "github.com/gofiber/fiber/v2"
+    "github.com/google/uuid"
+    "github.com/sirupsen/logrus"
+)
+
+// Запросы и ответы
+type (
+    CreateOrderRequest struct {
+        UserID     int64   `json:"user_id"`
+        ProductIDs []int64 `json:"product_ids"`
+    }
+
+    CreateOrderResponse struct {
+        ID string `json:"id"`
+    }
+
+    GetOrderResponse struct {
+        ID         string  `json:"id"`
+        UserID     int64   `json:"user_id"`
+        ProductIDs []int64 `json:"product_ids"`
+    }
+)
+
+func main() {
+    orderHandler := &OrderHandler{
+        storage: &OrderStorage{
+            orders: make(map[string]Order),
+        },
+    }
+
+    webApp := fiber.New()
+    webApp.Post("/orders", orderHandler.CreateOrder)
+    webApp.Get("/orders/:id", orderHandler.GetOrder)
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+
+// Абстрактное хранилище
+type OrderCreatorGetter interface {
+    CreateOrder(order Order) (string, error)
+    GetOrder(id string) (Order, error)
+}
+
+// Обработчик
+type OrderHandler struct {
+    storage OrderCreatorGetter
+}
+
+func (h *OrderHandler) CreateOrder(c *fiber.Ctx) error {
+    var request CreateOrderRequest
+    if err := c.BodyParser(&request); err != nil {
+        return fmt.Errorf("body parser: %w", err)
+    }
+
+    order := Order{
+        ID:         uuid.New().String(),
+        UserID:     request.UserID,
+        ProductIDs: request.ProductIDs,
+    }
+
+    id, err := h.storage.CreateOrder(order)
+    if err != nil {
+        return fmt.Errorf("create order: %w", err)
+    }
+
+    return c.JSON(CreateOrderResponse{
+        ID: id,
+    })
+}
+
+func (h *OrderHandler) GetOrder(c *fiber.Ctx) error {
+    id := c.Params("id")
+
+    order, err := h.storage.GetOrder(id)
+    if err != nil {
+        return fmt.Errorf("get order: %w", err)
+    }
+
+    return c.JSON(GetOrderResponse(order))
+}
+
+// Модель заказа
+type Order struct {
+    ID         string
+    UserID     int64
+    ProductIDs []int64
+}
+
+// Хранилище
+type OrderStorage struct {
+    orders map[string]Order
+}
+
+func (o *OrderStorage) CreateOrder(order Order) (string, error) {
+    o.orders[order.ID] = order
+
+    return order.ID, nil
+}
+
+// Ошибки
+var (
+    errOrderNotFound = errors.New("order not found")
+)
+
+func (o *OrderStorage) GetOrder(id string) (Order, error) {
+    order, ok := o.orders[id]
+    if !ok {
+        return Order{}, errOrderNotFound
+    }
+
+    return order, nil
+}
+```
+
+Запрос на сохранение
+
+```bash
+curl --location --request POST 'http://localhost/orders' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "user_id": 222,
+    "product_ids": [1,2,3]
+}'
+
+```
+
+Запрос на получение:
+
+```bash
+curl -v 'http://localhost/orders/4b49e11e-6f59-432e-9075-3aa429fd935a'
+
+HTTP/1.1 200 OK
+{"id":"4b49e11e-6f59-432e-9075-3aa429fd935a","user_id":222,"product_ids":[1,2,3]}
+```
+
+### Защита мап с мьютексом
+
+В примере выше есть упущение. Каждый HTTP-запрос рабтает в своей горутине, что может привести к ситуации когда несколько горутин будут одновременно пытаться изменить состояние одной структуры.
+
+Чтобы избежать проблем с этим можно использовать мьютексы. Мьютекс - это механизм синхронизации, который позволяет блокировать  доступ к критической секции кода, чтобы только одна горутина могла  читать или изменять данные в мапе в один момент времени.
+
+Пример использования мьютекса:
+
+```go
+import "sync"
+
+var (
+    mu = sync.Mutex{}
+    i = 0
+)
+
+func safeInc() {
+    mu.Lock()
+    i++
+    mu.Unlock()
+}
+```
+
+Структура мьютекс предоставляет две функции: заблокировать и разблокировать. В примере была заблокирована секция инкремента переменной `i`, что гарантирует изменение переменной только одной горутиной в один момент времени.
+
+Приме с испольозванием мьютексов для *OrderStorage* из первого примера:
+
+```go
+type OrderStorage struct {
+    mu     sync.Mutex
+    orders map[string]Order
+}
+
+func (o *OrderStorage) CreateOrder(order Order) (string, error) {
+    o.mu.Lock()
+    defer o.mu.Unlock()
+
+    o.orders[order.ID] = order
+
+    return order.ID, nil
+}
+
+func (o *OrderStorage) GetOrder(id string) (Order, error) {
+    o.mu.Lock()
+    defer o.mu.Unlock()
+
+    order, ok := o.orders[id]
+    if !ok {
+        return Order{}, errOrderNotFound
+    }
+
+    return order, nil
+}
+```
+
+Здесь добавилась блокировка на каждый метод, который читает или пишет в мапу `orders`.
