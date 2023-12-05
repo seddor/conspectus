@@ -1317,3 +1317,222 @@ func main() {
 ```
 
 [Fiber validation](https://docs.gofiber.io/guide/validation/)
+
+## HTTP Middleware
+
+Посредники или middlewares в Fiber являются функциями `func(c *fiber.Ctx) error`, которые устанавливаются перед обработчиками. Посредник может изменять запрос, добавлять заголовки, выполнять легирование, а также прервать обработку запроса.
+
+Пример обработчика, проверяющего доступ к веб-приложению:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+)
+
+func main() {
+    webApp := fiber.New()
+    webApp.Use(accessMiddleware)
+    webApp.Post("/do/something", func(ctx *fiber.Ctx) error {
+        ...
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+
+func accessMiddleware(c *fiber.Ctx) error {
+    accessToken := c.Params("access_token")
+    if !hasAccess(accessToken) {
+        // Посредник прерывает цепочку обработки запроса.
+        return c.SendStatus(fiber.StatusUnauthorized)
+    }
+
+    // Пользователь имеет доступ, продолжаем выполнение запроса.
+    return c.Next()
+}
+```
+
+Здесь создаётся посредник `accessMiddleware`, проверяющий Наличе токена доступа в параметрах запроса. Если токен не прошёл проверку, то посредник перрывает запрос и воврзащает 401. Если токен валиден, то посредник вызвает метод `c.Next()`, который продолжает обработку запроса.
+
+Этот подход подходит если нужно использовать обработчик на всех обработчиках.
+
+### Группировка запросов в маршрутизации
+
+Чтобы названчить посредника только на некоторые обработчики их нужно сгруппировать с помощью `r.Group()`. После этого можно установить посредников с помощью `r.Use()`:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+)
+
+func main() {
+    webApp := fiber.New()
+
+    // Создаем группу с префиксом пути запроса "/authorized".
+    authGroup := webApp.Group("/authorized")
+    // Добавляем посредника проверки доступа в группу.
+    authGroup.Use(accessMiddleware)
+    // Добавляем обработчики запросов в группу.
+    authGroup.Post("/action/1", func(ctx *fiber.Ctx) error {})
+    authGroup.Post("/action/2", func(ctx *fiber.Ctx) error {})
+    authGroup.Post("/action/3", func(ctx *fiber.Ctx) error {})
+
+    // Создаем группу с префиксом пути запроса "/public".
+    publicGroup := webApp.Group("/public")
+    // У группы нет посредников.
+    // При запросах к группе сразу выполняются обработчики.
+    publicGroup.Post("/action/1", func(ctx *fiber.Ctx) error {})
+    publicGroup.Post("/action/2", func(ctx *fiber.Ctx) error {})
+    publicGroup.Post("/action/3", func(ctx *fiber.Ctx) error {})
+
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+Здесь создаются две группы запросов: `authGroup` и `publicGroup`. В группу `authGroup` добавляется посредник `accessMiddleware`, проверяющий наличие корректного токене в запросе. В группе `publicGroup` посредника не добавляется, поэтому запросы идут сразу к обработчикам.
+
+### Логирование запросов
+
+Чтобы добавить логирование всех запросов в Fiber-приложение, нужно подключить к проекту пакет *github.com/gofiber/fiber/v2/middleware/logger* и инициализировать его перед всеми обработчиками:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/gofiber/fiber/v2/middleware/logger"
+    "github.com/sirupsen/logrus"
+    "time"
+)
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Use(logger.New())
+    webApp.Get("/", func(c *fiber.Ctx) error {
+        // Создаем искусственную задержку, чтобы проверить логирование.
+        time.Sleep(300 * time.Millisecond)
+
+        return c.SendString("OK")
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+По умолчанию логирование идёт в консоль, но можно настроить логирование в файл или другие системы логирования.
+
+Также при инициализации посредника для логирования можно указать формат логов. Для этого нужно передать в функцию инициализации посредника параметр `logger.Config`:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/gofiber/fiber/v2/middleware/logger"
+    "github.com/sirupsen/logrus"
+    "time"
+)
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Use(logger.New(logger.Config{
+        Format:     "${time} ${method} ${path} - ${status} - ${latency}\n",
+        TimeFormat: "2006-01-02 15:04:05.000000",
+    }))
+    webApp.Get("/", func(c *fiber.Ctx) error {
+        // Создаем искусственную задержку, чтобы проверить логирование.
+        time.Sleep(300 * time.Millisecond)
+
+        return c.SendString("OK")
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+Хорошей практичкой является логирование идентификатора, позволяющего свзяать все логи в рамках одного запроса. Для этого нужно подклчить к проекту пакет `github.com/gofiber/fiber/v2/middleware/requestid` и инициализировать его перед посредником для логирования:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/gofiber/fiber/v2/middleware/logger"
+    "github.com/gofiber/fiber/v2/middleware/requestid"
+    "github.com/sirupsen/logrus"
+    "time"
+)
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Use(requestid.New())
+    webApp.Use(logger.New(logger.Config{
+        Format:     "${locals:requestid}: ${time} ${method} ${path} - ${status} - ${latency}\n",
+        TimeFormat: "2006-01-02 15:04:05.000000",
+    }))
+    webApp.Get("/", func(c *fiber.Ctx) error {
+        // Создаем искусственную задержку, чтобы проверить логирование.
+        time.Sleep(300 * time.Millisecond)
+
+        logrus.WithFields(logrus.Fields{
+            "request_id": c.Locals("requestid"),
+        }).Warn("something went wrong")
+
+        return c.SendString("OK")
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+### Ограничение количества запросов (throttling)
+
+Для тротлинга используется пакет `github.com/gofiber/fiber/v2/middleware/limiter`:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/gofiber/fiber/v2/middleware/limiter"
+    "github.com/sirupsen/logrus"
+    "time"
+)
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Use(limiter.New(limiter.Config{
+        KeyGenerator: func(c *fiber.Ctx) string {
+            return c.IP()
+        },
+        Max:        3,
+        Expiration: 10 * time.Second,
+    }))
+    webApp.Get("/", func(c *fiber.Ctx) error {
+        return c.SendString("OK")
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+Здесь мы ограничиваем доступ 3мя запросами раз в 10 секунд, по достижению лимита будет отправляется ответ с кодом *429*.
+
+В данном примере используется IP-адрес клиента, чтобы определить источник запроса. Но можно использовать любой другой идентификатор, например, идентификатор пользователя или сессии.
+
+### Дополнительно
+
+1. [Fiber Middleware](https://docs.gofiber.io/guide/routing#middleware)
+2. [Fiber Request ID Middleware](https://docs.gofiber.io/api/middleware/requestid)
+3. [Fiber Logging Middleware](https://docs.gofiber.io/api/middleware/logger)
+4. [Fiber Limiter Middleware](https://docs.gofiber.io/api/middleware/limiter)
