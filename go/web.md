@@ -1103,3 +1103,217 @@ func (s *EmployeeStorageInMemory) Delete(id string) {
 }
 ```
 
+## Валидация HTTP-запросов
+
+### Ручная проверка
+
+Пример валидации при сохранеии поста:
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+)
+
+type CreatePostRequest struct {
+    UserID int64  `json:"user_id"`
+    Text   string `json:"text"`
+}
+
+func (req *CreatePostRequest) Validate() error {
+    if req.UserID < 0 {
+        return errors.New("user ID cannot be less than 0")
+    }
+    if req.Text == "" {
+        return errors.New("text is empty")
+    }
+    if len(req.Text) > 140 {
+        return errors.New("text is too long")
+    }
+
+    return nil
+}
+
+func main() {
+    webApp := fiber.New()
+
+    webApp.Post("/posts", func(ctx *fiber.Ctx) error {
+        // Парсинг JSON-строки из тела запроса в объект.
+        var req CreatePostRequest
+        if err := ctx.BodyParser(&req); err != nil {
+            return fmt.Errorf("body parser: %w", err)
+        }
+
+        // Проверка запроса на корректность.
+        err := req.Validate()
+        if err != nil {
+            return ctx.Status(fiber.StatusUnprocessableEntity).SendString(err.Error())
+        }
+
+        // @TODO Сохранение поста в хранилище.
+
+        return ctx.SendStatus(fiber.StatusOK)
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+Такой подход прост и понятен, но он плохо масштабируется: чем больше будет полей тем более грамоздким будет код, а также появится дублирование.
+
+К тому же в этой реализации возвращаетс только одна ошибка, а не сразу все.
+
+Чтобы это исправить можно использовать готовые библиотеки для валидации, например [go-playground/validator](https://github.com/go-playground/validator).
+
+### Валидация с помощью validator
+
+Эта библиотека позволяет реализовать валидацию с помощью анотаций полей структур.
+
+Пример валидации поста:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-playground/validator/v10"
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+)
+
+type CreatePostRequest struct {
+    // Описываем правила валидации в аннотациях полей структуры.
+    UserID int64  `json:"user_id" validate:"required,min=0"`
+    Text   string `json:"text" validate:"required,max=140"`
+}
+
+func main() {
+    webApp := fiber.New()
+
+    validate := validator.New()
+
+    webApp.Post("/posts", func(ctx *fiber.Ctx) error {
+        // Парсинг JSON-строки из тела запроса в объект.
+        var req CreatePostRequest
+        if err := ctx.BodyParser(&req); err != nil {
+            return fmt.Errorf("body parser: %w", err)
+        }
+
+        // Проверка запроса на корректность.
+        err := validate.Struct(req)
+        if err != nil {
+            return ctx.Status(fiber.StatusUnprocessableEntity).SendString(err.Error())
+        }
+
+        // @TODO Сохранение поста в хранилище.
+
+        return ctx.SendStatus(fiber.StatusOK)
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+Библиотека уже содержит в себе множество готовых правил валидации. Например, можно проверять что поле является корректным емейлом:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-playground/validator/v10"
+)
+
+type User struct {
+    Email string `validate:"required,email"`
+}
+
+func main() {
+    v := validator.New()
+
+    // Вывод: Key: 'User.Email' Error:Field validation for 'Email' failed on the 'required' tag
+    fmt.Println(v.Struct(&User{}))
+    // Вывод: Key: 'User.Email' Error:Field validation for 'Email' failed on the 'email' tag
+    fmt.Println(v.Struct(&User{Email: "test"}))
+    // Пустой вывод, так как ошибки нет.
+    fmt.Println(v.Struct(&User{Email: "test@gmail.com"}))
+}
+```
+
+[Полный список проверок](https://pkg.go.dev/github.com/go-playground/validator/v10)
+
+### Пользовательские валидаторы
+
+Для добавления своих правил валидации используется функция `validate.RegisterValidation()`.
+
+Например, нужно проверить что в посте отсутвуют слова из списка:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-playground/validator/v10"
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+    "log"
+    "strings"
+)
+
+type CreatePostRequest struct {
+    // Описываем правила валидации в аннотациях полей структуры.
+    UserID int64  `json:"user_id" validate:"required,min=0"`
+    Text   string `json:"text" validate:"required,max=140,allowable_text"`
+}
+
+var forbiddenWords = []string{
+    "umbrella",
+    "shinra",
+}
+
+func main() {
+    webApp := fiber.New()
+
+    validate := validator.New()
+    vErr := validate.RegisterValidation("allowable_text", func(fl validator.FieldLevel) bool {
+        // Проверяем, что текст не содержит запрещенных слов.
+        text := fl.Field().String()
+        for _, word := range forbiddenWords {
+            if strings.Contains(strings.ToLower(text), word) {
+                return false
+            }
+        }
+
+        return true
+    })
+    if vErr != nil {
+        log.Fatal("register validation ", vErr)
+    }
+
+    webApp.Post("/posts", func(ctx *fiber.Ctx) error {
+        // Парсинг JSON-строки из тела запроса в объект.
+        var req CreatePostRequest
+        if err := ctx.BodyParser(&req); err != nil {
+            return fmt.Errorf("body parser: %w", err)
+        }
+
+        // Проверка запроса на корректность.
+        err := validate.Struct(req)
+        if err != nil {
+            return ctx.Status(fiber.StatusUnprocessableEntity).SendString(err.Error())
+        }
+
+        // @TODO Сохранение поста в хранилище.
+
+        return ctx.SendStatus(fiber.StatusOK)
+    })
+
+    logrus.Fatal(webApp.Listen(":80"))
+}
+```
+
+[Fiber validation](https://docs.gofiber.io/guide/validation/)
