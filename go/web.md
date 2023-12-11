@@ -1536,3 +1536,347 @@ func main() {
 2. [Fiber Request ID Middleware](https://docs.gofiber.io/api/middleware/requestid)
 3. [Fiber Logging Middleware](https://docs.gofiber.io/api/middleware/logger)
 4. [Fiber Limiter Middleware](https://docs.gofiber.io/api/middleware/limiter)
+
+## JWT-авторизация на сервере
+
+**WT (JSON Web Token)** — это специальный формат токена, который позволяет безопасно передавать данные между клиентом и сервером.
+
+JWT-токен состоит из трех частей, которые разделены точкой:
+
+- **Header** или **заголовок** — информация о токене, тип токена и алгоритм шифрования
+- **Payload** или **полезные данные** —  данные, которые мы хотим передать в токене. Например, имя пользователя,  его роль, истекает ли токен. Эти данные представлены в виде JSON-объекта
+- **Signature** или **подпись** — подпись токена, которая позволяет проверить, что токен не был изменен
+
+Обычный токен имеет формат:
+
+```
+xxxxx.yyyyy.zzzzz
+```
+
+Пример токена:
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+```
+
+#### Header
+
+Заголовок обычно состоит из JSON-объекта с двумя свойствами:
+
+* Тип токена, у нас — **JWT**
+* Алгоритм шифрования, у нас — **HMAC SHA256**
+
+Далее этот Json-объект хэшируетс с помощью _Base64Url-кодирования_ для представления в виде компактной строки.
+
+У нас заголовок JWT-токена имеет следующие значения:
+
+```json
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+```
+
+#### Payload
+
+Вторая часть токена — полезная нагрузка в виде JSON-объекта, она содержит данные об авторизованном пользователе. Значение будет различно для каждого веб-приложения, сюда можно записать любые публичные данные необходимые для авторизации.
+
+Эта часть также хэшируется с помощью _Base64Url-кодирования_.
+
+У нас для этой части такое значение:
+
+```json
+{
+  "sub": "1234567890",
+  "name": "John Doe",
+  "iat": 1516239022
+}
+```
+
+Здесь:
+
+* sub — идентификатор клиента;
+* name — имя;
+* iat — время создания токена
+
+При составлении полей рекоменудуется использовать имена из [документации IANA (Internet Assigned Numbers Authority)](https://www.iana.org/assignments/jwt/jwt.xhtml).
+
+Основная причина сокращения названия полей в полезной нагрузке — это уменьшение размера токена после шифрования.
+
+#### Signature
+
+Для создания подписи нужно взять закодированный заголовок, закодированную полезную нагрузку, секретную строку и зашифровать эти данные. При этом нужно использовать алгоритм шифрования из заголовка JWT-токена.
+
+В примере используется  *HMAC SHA256* и секретная строка `your-256-bit-secret`:
+
+```
+HMACSHA256(
+  base64UrlEncode(header) + "." +
+  base64UrlEncode(payload),
+  your-256-bit-secret
+)
+```
+
+Подпись используется чтобы проверить, что сообщение не было изменено при передаче. Она также позволяет подтвердить, что JWT-токен является тем, кем он представляется.
+
+#### Собираем все части
+
+В результате генерации получается три Base64-URL-закодированные строки, которые разделены точкой.
+
+Для декодирования, проверки и генерации можно использовать — [jwt.io Debugger](https://jwt.io/)
+
+### Алгоритм работы с JWT-токеном
+
+Процес аутентификации и авторизации с JWT-токеном между веб-браузером и веб-приложением выглядит следующим обрзаом:
+
+1. Веб-браузер отправляет запрос веб-приложению с логином и паролем;
+2. Веб-приложение проверяет логин и пароль, если всё ок, то генерируется JWT-токен и отправляет его к веб-браузеру. При генерации JWT-токена веб-приложение ставит подпись секретным ключом, которых хранится только в веб-приложении;
+3. Веб-браузер сохраняет JWT-токен и отправляет его вместе с каждым запросом в веб-приложение;
+4. Веб-приложение проверяет JWT-токен и если он верный, то выполняет действие от имени авторизованного пользователя.
+
+Безопасность коммуникации между бразуером и приложением заключается в том, что токены генерируются и подписываются только со стороны веб-приложения. Такой токен невозможно подделать без знаяния секретного ключа.
+
+Подпись токена проихсодит с помощью шифрования. С помощью подписи приложение проверяет, что токен действительно был сгенерирован этим приложением. Для шифрования могут исползоваться различные алгоритмы.
+
+### JWT-авторизация в Go
+
+Расмотрим пример реализации атентификации, для этого реализуем:
+
+* Регистрация пользователя;
+* Вход в аккаунт — аунтификация;
+* Получение информации о своём аккаунт – только для авторизированных пользователей.
+
+#### Регистрация аккаунта
+
+Когда пользователь заходит на веб-сайт, он видит форму регистрации с  тремя полями: имя, электронная почта и пароль. После заполнения формы  пользователь нажимает кнопку «Зарегистрироваться», и веб-браузер  отправляет HTTP-запрос `POST /register` в наше веб-приложение. Мы реализуем обработчик этого HTTP-запроса следующим образом:
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+    "github.com/gofiber/fiber/v2"
+    "github.com/sirupsen/logrus"
+)
+
+func main() {
+    app := fiber.New()
+
+    authHandler := &AuthHandler{&AuthStorage{map[string]User{}}}
+
+    app.Post("/register", authHandler.Register)
+
+    logrus.Fatal(app.Listen(":80"))
+}
+
+type (
+    // Обработчик HTTP-запросов на регистрацию и аутентификацию пользователей
+    AuthHandler struct {
+        storage *AuthStorage
+    }
+
+    // Хранилище зарегистрированных пользователей
+    // Данные хранятся в оперативной памяти
+    AuthStorage struct {
+        users map[string]User
+    }
+
+    // Структура данных с информацией о пользователе
+    User struct {
+        Email    string
+        Name     string
+        password string
+    }
+)
+
+//  Структура HTTP-запроса на регистрацию пользователя
+type RegisterRequest struct {
+    Email    string `json:"email"`
+    Name     string `json:"name"`
+    Password string `json:"password"`
+}
+
+// Обработчик HTTP-запросов на регистрацию пользователя
+func (h *AuthHandler) Register(c *fiber.Ctx) error {
+    regReq := RegisterRequest{}
+    if err := c.BodyParser(&regReq); err != nil {
+        return fmt.Errorf("body parser: %w", err)
+    }
+
+    // Проверяем, что пользователь с таким email еще не зарегистрирован
+    if _, exists := h.storage.users[regReq.Email]; exists {
+        return errors.New("the user already exists")
+    }
+
+    // Сохраняем в память нового зарегистрированного пользователя
+    h.storage.users[regReq.Email] = User{
+        Email:    regReq.Email,
+        Name:     regReq.Name,
+        password: regReq.Password,
+    }
+
+    return c.SendStatus(fiber.StatusCreated)
+}
+```
+
+#### Вход в аккаунт
+
+Когда пользователь заходит на страницу входа в аккаунт, он видит форму с двумя полями: электронная почта и пароль. Эти поля являются учетными  данными пользователя. После заполнения формы пользователь нажимает  кнопку «Войти», и веб-браузер отправляет HTTP-запрос `POST /login` в наше веб-приложение. Обработчик этого запроса будет выглядеть следующим образом:
+
+```go
+// Структура HTTP-запроса на вход в аккаунт
+type LoginRequest struct {
+    Email    string `json:"email"`
+    Password string `json:"password"`
+}
+
+// Структура HTTP-ответа на вход в аккаунт
+// В ответе содержится JWT-токен авторизованного пользователя
+type LoginResponse struct {
+    AccessToken string `json:"access_token"`
+}
+
+var (
+    errBadCredentials = errors.New("email or password is incorrect")
+)
+
+// Секретный ключ для подписи JWT-токена
+// Необходимо хранить в безопасном месте
+var jwtSecretKey = []byte("very-secret-key")
+
+// Обработчик HTTP-запросов на вход в аккаунт
+func (h *AuthHandler) Login(c *fiber.Ctx) error {
+    regReq := LoginRequest{}
+    if err := c.BodyParser(&regReq); err != nil {
+        return fmt.Errorf("body parser: %w", err)
+    }
+
+    // Ищем пользователя в памяти приложения по электронной почте
+    user, exists := h.storage.users[regReq.Email]
+    // Если пользователь не найден, возвращаем ошибку
+    if !exists {
+        return errBadCredentials
+    }
+    // Если пользователь найден, но у него другой пароль, возвращаем ошибку
+    if user.password != regReq.Password {
+        return errBadCredentials
+    }
+
+    // Генерируем JWT-токен для пользователя,
+    // который он будет использовать в будущих HTTP-запросах
+
+    // Генерируем полезные данные, которые будут храниться в токене
+    payload := jwt.MapClaims{
+        "sub":  user.Email,
+        "exp":  time.Now().Add(time.Hour * 72).Unix(),
+    }
+
+    // Создаем новый JWT-токен и подписываем его по алгоритму HS256
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, payload)
+
+    t, err := token.SignedString(jwtSecretKey)
+    if err != nil {
+        logrus.WithError(err).Error("JWT token signing")
+        return c.SendStatus(fiber.StatusInternalServerError)
+    }
+
+    return c.JSON(LoginResponse{AccessToken: t})
+}
+```
+
+Для генерации JWT-токена, используется библиотека [jwt-go](https://github.com/golang-jwt/jwt). 
+
+В полезной нагрузке JWT-токена записывается электронная почта пользователя как идентификатор, а также время когда токен перестанет быть действительным. В примере это 72 часа.
+
+#### Получение информации об аккаунте
+
+Когда пользователь прошел аутентификацию, он получил JWT-токен,  который будет использовать в последующих HTTP-запросов для авторизации.  Есть разные способы передавать токен в HTTP-запросе. Для этого можно  использовать заголовок *Authorization*, параметр запроса или даже куки веб-браузера. Мы будем использовать заголовок *Authorization*, так как это наиболее распространенный способ передачи JWT-токена в HTTP-запросе.
+
+Когда пользователь заходит на свою страницу, веб-браузер отправляет HTTP-запрос `GET /profile` в наше веб-приложение. Обработчик этого запроса выглядит следующим образом:
+
+```go
+package main
+
+import (
+    ...
+    jwtware "github.com/gofiber/contrib/jwt"
+    jwt "github.com/golang-jwt/jwt/v5"
+    ...
+)
+
+const (
+    contextKeyUser = "user"
+)
+
+func main() {
+    app := fiber.New()
+
+    ...
+
+    // Группа обработчиков, которые требуют авторизации
+    authorizedGroup := app.Group("")
+    authorizedGroup.Use(jwtware.New(jwtware.Config{
+     SigningKey: jwtware.SigningKey{
+      Key: jwtSecretKey,
+     },
+     ContextKey: contextKeyUser,
+    }))
+    authorizedGroup.Get("/profile", userHandler.Profile)
+
+    logrus.Fatal(app.Listen(":80"))
+}
+
+// Структура HTTP-ответа с информацией о пользователе
+type ProfileResponse struct {
+    Email string `json:"email"`
+    Name  string `json:"name"`
+}
+
+func jwtPayloadFromRequest(c *fiber.Ctx) (jwt.MapClaims, bool) {
+    jwtToken, ok := c.Context().Value(contextKeyUser).(*jwt.Token)
+    if !ok {
+        logrus.WithFields(logrus.Fields{
+            "jwt_token_context_value": c.Context().Value(contextKeyUser),
+        }).Error("wrong type of JWT token in context")
+        return nil, false
+    }
+
+    payload, ok := jwtToken.Claims.(jwt.MapClaims)
+    if !ok {
+        logrus.WithFields(logrus.Fields{
+            "jwt_token_claims": jwtToken.Claims,
+        }).Error("wrong type of JWT token claims")
+        return nil, false
+    }
+
+    return payload, true
+}
+
+// Обработчик HTTP-запросов на получение информации о пользователе
+func (h *UserHandler) Profile(c *fiber.Ctx) error {
+    jwtPayload, ok := jwtPayloadFromRequest(c)
+    if !ok {
+        return c.SendStatus(fiber.StatusUnauthorized)
+    }
+
+    userInfo, ok := h.storage.users[jwtPayload["sub"].(string)]
+    if !ok {
+        return errors.New("user not found")
+    }
+
+    return c.JSON(ProfileResponse{
+        Email: userInfo.Email,
+        Name:  userInfo.Name,
+    })
+}
+```
+
+Так как проверка авторизации может происходить во многих  HTTP-обработчиках, мы вынесли ее на уровень посредников. В  микрофреймворке Fiber для этого есть готовый посредник — [jwtware](https://github.com/gofiber/jwt).
+
+При инициализации посредника указываются два свойства:
+
+- *SigningKey* — секретный ключ JWT-токена
+- *ContextKey* — название поля, по которому хранится объект  JWT-токена авторизованного пользователя. Этот объект можно использовать в любом обработчике группы `authorizedGroup`
+
+Когда приходит HTTP-запрос на получение информации о пользователе, веб-приложение проверяет, что в заголовке *Authorization* указан корректный JWT-токен. Если проверка прошла успешно,  веб-приложение ищет пользователя в хранилище по электронной почте,  которая записана в полезной нагрузке JWT-токена. Если пользователь был  найден, то авторизация пройдена, и мы возвращаем в HTTP-ответе  информацию об этом пользователе.
