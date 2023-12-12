@@ -2034,3 +2034,163 @@ func main() {
 }
 ```
 
+## Обработка ошибок в веб-приложении
+
+### Восстановление после паники
+
+**Паника** — это критическая ошибка, которая останавливает  работу всего Go-приложения. Возникает в запущенном приложении,  поэтому ее нельзя обнаружить во время компиляции.
+
+В Go предусмотрен мехнанизм восстановление от паники.
+
+В веб-приложениях принято устанавливать посредник для восстановелния:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/gofiber/fiber/v2/middleware/recover"
+    "time"
+)
+
+type (
+    // Структура HTTP-запроса на расчет диапазона дат
+    DateRangeRequest struct {
+        From Date `json:"from"`
+        To   Date `json:"to"`
+    }
+
+    // Структура даты, которая хранит формат и значение
+    Date struct {
+        Value  string `json:"value"`
+        Format string `json:"format"`
+    }
+
+    // Структура HTTP-ответа на расчет диапазона дат
+    // Хранит значение в секундах
+    DateRangeResponse struct {
+        SecondsRange int64 `json:"seconds_range"`
+    }
+)
+
+func main() {
+    webApp := fiber.New()
+    // Устанавливаем посредника, который будет
+    // восстанавливать веб-приложение после паники
+    webApp.Use(recover.New())
+
+    webApp.Post("/daterange", func(c *fiber.Ctx) error {
+        var req *DateRangeRequest
+        c.BodyParser(req)
+
+        from, _ := time.Parse(req.From.Format, req.From.Value)
+        to, _ := time.Parse(req.To.Format, req.To.Value)
+
+        return c.JSON(DateRangeResponse{
+            SecondsRange: int64(to.Sub(from).Seconds()),
+        })
+    })
+
+    webApp.Listen(":80")
+}
+```
+
+Теперь если запустить приложение и воспроизвести отправить некорректный JSON мы получим следующий ответ:
+
+```
+runtime error: invalid memory address or nil pointer dereference
+```
+
+При этом веб-приложение продолжит работу блягодаря посреднику `recover.New()`, который восстановит приложение после паники.
+
+### Обработка ошибок
+
+В Go ошибки представлены явным типом `error`. Как правило в Go нужно **обрабатывать абсолютно все ошибки в коде прриложения**.
+
+Добавим обработку всех ошибок:
+
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "github.com/gofiber/fiber/v2/middleware/recover"
+    "github.com/sirupsen/logrus"
+    "time"
+)
+
+type (
+    // Структура HTTP-запроса на расчет диапазона дат
+    DateRangeRequest struct {
+        From Date `json:"from"`
+        To   Date `json:"to"`
+    }
+
+    // Структура даты, которая хранит формат и значение
+    Date struct {
+        Value  string `json:"value"`
+        Format string `json:"format"`
+    }
+
+    // Структура HTTP-ответа на расчет диапазона дат
+    // Хранит значение в секундах
+    DateRangeResponse struct {
+        SecondsRange int64 `json:"seconds_range"`
+    }
+)
+
+func main() {
+    webApp := fiber.New()
+    // Устанавливаем посредника, который будет
+    // восстанавливать веб-приложение после паники
+    webApp.Use(recover.New())
+
+    webApp.Post("/daterange", func(c *fiber.Ctx) error {
+        var req *DateRangeRequest
+        if err := c.BodyParser(&req); err != nil {
+            logrus.WithError(err).Info("body parser")
+            return c.Status(fiber.StatusBadRequest).SendString("bad JSON")
+        }
+
+        from, err := time.Parse(req.From.Format, req.From.Value)
+        if err != nil {
+            logrus.WithError(err).Info("parse 'from' date")
+            return c.Status(fiber.StatusUnprocessableEntity).SendString("bad 'from' date")
+        }
+        to, err := time.Parse(req.To.Format, req.To.Value)
+        if err != nil {
+            logrus.WithError(err).Info("parse 'to' date")
+            return c.Status(fiber.StatusUnprocessableEntity).SendString("bad 'to' date")
+        }
+
+        return c.JSON(DateRangeResponse{
+            SecondsRange: int64(to.Sub(from).Seconds()),
+        })
+    })
+
+    lErr := webApp.Listen(":80")
+    if lErr != nil {
+        logrus.WithError(lErr).Fatal("listen port")
+    }
+}
+```
+
+### Таймаут при обработке HTTP-запроса
+
+Добавим настройку таймаутов в наш код:
+
+```go
+func main() {
+    // Создаем новый экземпляр Fiber веб-приложения
+    // Указываем таймаут на чтение HTTP-запросов в 3 секунды
+    // Указываем таймаут на запись HTTP-запросов в 3 секунды
+    webApp := fiber.New(fiber.Config{
+        ReadTimeout:  3 * time.Second,
+        WriteTimeout: 3 * time.Second,
+    })
+
+    ...
+}
+```
+
+Таймауты настраиваются через передачу параметров в конструктор `fiber.New()`. Здесь указан таймаут на чтение HTTP-запросов и запись HTTP-ответов в три  секунды. Если спустя заданное время не произойдет ни одного действия, то соединение будет закрыто.
